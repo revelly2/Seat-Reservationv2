@@ -123,12 +123,13 @@ export const UserDashboard: React.FC = () => {
 
   // Fetch distinct seat occupancy specifically for the active event
   useEffect(() => {
-    if (!selectedEvent?.id) return;
+    const eventId = selectedEvent?.id;
+    if (!eventId) return;
 
     async function loadSeatsForEvent() {
       setSelectedSeatIds([]);
       try {
-        const seatsRes = await fetch(`/api/v1/events/${selectedEvent.id}/seats`);
+        const seatsRes = await fetch(`/api/v1/events/${eventId}/seats`);
         const seatsData = await seatsRes.json();
         if (seatsData.seats) {
           setSeats(seatsData.seats);
