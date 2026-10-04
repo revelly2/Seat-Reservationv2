@@ -44,11 +44,29 @@ export const UserDashboard: React.FC = () => {
   const loadUserReservations = useCallback(async () => {
     try {
       const email = currentUser?.email;
+      let storedTicketIds: string[] = [];
+      try {
+        storedTicketIds = JSON.parse(localStorage.getItem('sotero_user_booked_tickets') || '[]');
+      } catch (e) {}
+
+      // Always fetch user tickets or all tickets for guest
       const url = email ? `/api/v1/reservations?userId=${encodeURIComponent(email)}` : '/api/v1/reservations';
       const res = await fetch(url);
       const data = await res.json();
-      if (data.reservations && Array.isArray(data.reservations)) {
-        const enriched = data.reservations.map((r: any) => {
+      let combined: any[] = Array.isArray(data.reservations) ? [...data.reservations] : [];
+
+      // If user is logged in, also ensure any tickets booked on this device are included
+      if (email && storedTicketIds.length > 0) {
+        const allRes = await fetch('/api/v1/reservations');
+        const allData = await allRes.json();
+        if (Array.isArray(allData.reservations)) {
+          const deviceTickets = allData.reservations.filter((r: any) => storedTicketIds.includes(r.id));
+          combined.push(...deviceTickets);
+        }
+      }
+
+      if (combined.length > 0) {
+        const enriched = combined.map((r: any) => {
           const ev = events.find((e) => e.id === r.eventId);
           return {
             ...r,
@@ -251,20 +269,29 @@ export const UserDashboard: React.FC = () => {
           if (data.success && data.paid) {
             const seatIdsToBook = pendingData?.seatIds || (data.metadata?.seatIds ? data.metadata.seatIds.split(',') : []);
 
+            const bookingUserId = currentUser?.email || data.customerEmail || pendingData?.email || 'guest@abra.edu.ph';
             const resPost = await fetch('/api/v1/reservations', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 seatIds: seatIdsToBook,
                 totalAmount: data.amountTotal,
-                userId: data.customerEmail || pendingData?.email || 'guest@abra.edu.ph',
-                eventId: data.metadata?.eventId || pendingData?.eventId || 'evt-intra-2026',
+                userId: bookingUserId,
+                eventId: data.metadata?.eventId || pendingData?.eventId || '00000000-0000-4000-a000-000000000001',
                 paymentStatus: 'PAID_STRIPE',
               }),
             });
 
             const resData = await resPost.json();
             if (resData.success && resData.reservation) {
+              try {
+                const stored = JSON.parse(localStorage.getItem('sotero_user_booked_tickets') || '[]');
+                if (!stored.includes(resData.reservation.id)) {
+                  stored.push(resData.reservation.id);
+                  localStorage.setItem('sotero_user_booked_tickets', JSON.stringify(stored));
+                }
+              } catch (e) {}
+
               setSeats((prev) =>
                 prev.map((s) =>
                   seatIdsToBook.includes(s.id) ? { ...s, status: 'BOOKED', currentHolderId: null } : s
@@ -275,7 +302,8 @@ export const UserDashboard: React.FC = () => {
                 eventName: selectedEvent ? selectedEvent.title : 'University of Abra Arena Event',
                 seats: pendingData?.seatsLabel || seatIdsToBook.join(', '),
               });
-              loadUserReservations();
+              await loadUserReservations();
+              setCurrentView('MY_RESERVATIONS');
             }
           }
         } catch (err) {
@@ -288,7 +316,7 @@ export const UserDashboard: React.FC = () => {
 
       verifyStripeSession();
     }
-  }, [loadUserReservations, selectedEvent, upsertReservation]);
+  }, [currentUser?.email, loadUserReservations, selectedEvent, upsertReservation]);
 
   const handleConfirmPayment = async (details: {
     name: string;
@@ -307,20 +335,30 @@ export const UserDashboard: React.FC = () => {
       0
     );
 
+    const bookingUserId = currentUser?.email || details.email || 'guest@abra.edu.ph';
+
     const res = await fetch('/api/v1/reservations', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         seatIds: selectedSeatIds,
         totalAmount: totalCalc,
-        userId: details.email,
-        eventId: selectedEvent ? selectedEvent.id : 'evt-intra-2026',
+        userId: bookingUserId,
+        eventId: selectedEvent ? selectedEvent.id : '00000000-0000-4000-a000-000000000001',
         paymentStatus: details.paymentStatus || 'PAID_STRIPE',
       }),
     });
 
     const data = await res.json();
     if (res.ok && data.reservation) {
+      try {
+        const stored = JSON.parse(localStorage.getItem('sotero_user_booked_tickets') || '[]');
+        if (!stored.includes(data.reservation.id)) {
+          stored.push(data.reservation.id);
+          localStorage.setItem('sotero_user_booked_tickets', JSON.stringify(stored));
+        }
+      } catch (e) {}
+
       setSeats((prev) =>
         prev.map((s) =>
           selectedSeatIds.includes(s.id) ? { ...s, status: 'BOOKED', currentHolderId: null } : s
@@ -334,7 +372,8 @@ export const UserDashboard: React.FC = () => {
       });
 
       setSelectedSeatIds([]);
-      loadUserReservations();
+      await loadUserReservations();
+      return data.reservation;
     }
   };
 
@@ -630,8 +669,10 @@ export const UserDashboard: React.FC = () => {
           }
         }}
         onConfirmPayment={handleConfirmPayment}
-        eventId={selectedEvent ? selectedEvent.id : 'evt-intra-2026'}
+        eventId={selectedEvent ? selectedEvent.id : '00000000-0000-4000-a000-000000000001'}
         eventTitle={selectedEvent ? selectedEvent.title : 'University of Abra Arena Championship'}
+        currentUser={currentUser}
+        onViewTickets={() => setCurrentView('MY_RESERVATIONS')}
       />
     </div>
   );

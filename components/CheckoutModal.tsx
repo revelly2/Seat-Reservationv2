@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Seat } from '@/types/seat-reservation';
+import React, { useState, useEffect } from 'react';
+import { Seat, UserProfile } from '@/types/seat-reservation';
 import { RegistrationCrosses } from './RegistrationCrosses';
 import { QRCodeSVG } from 'qrcode.react';
 
@@ -15,9 +15,11 @@ interface CheckoutModalProps {
     email: string;
     paymentStatus?: string;
     stripePaymentIntentId?: string;
-  }) => Promise<void>;
+  }) => Promise<any>;
   eventId?: string;
   eventTitle?: string;
+  currentUser?: UserProfile | null;
+  onViewTickets?: () => void;
 }
 
 export const CheckoutModal: React.FC<CheckoutModalProps> = ({
@@ -26,11 +28,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   totalPrice,
   onClose,
   onConfirmPayment,
-  eventId = 'evt-intra-2026',
+  eventId = '00000000-0000-4000-a000-000000000001',
   eventTitle = 'University of Abra Arena Championship',
+  currentUser,
+  onViewTickets,
 }) => {
-  const [name, setName] = useState('Jane Doe');
-  const [email, setEmail] = useState('jane.doe@example.com');
+  const [name, setName] = useState(currentUser?.fullName || 'Guest User');
+  const [email, setEmail] = useState(currentUser?.email || 'guest@abra.edu.ph');
   const [paymentMode, setPaymentMode] = useState<'STRIPE_CARD' | 'STRIPE_CHECKOUT'>('STRIPE_CARD');
   const [cardNumber, setCardNumber] = useState('4242 •••• •••• 4242');
   const [cardExpiry, setCardExpiry] = useState('12 / 28');
@@ -38,6 +42,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const [stripeError, setStripeError] = useState<string | null>(null);
   const [ticketReceipt, setTicketReceipt] = useState<any>(null);
+
+  useEffect(() => {
+    if (currentUser) {
+      if (currentUser.fullName) setName(currentUser.fullName);
+      if (currentUser.email) setEmail(currentUser.email);
+    }
+  }, [currentUser, isOpen]);
 
   if (!isOpen) return null;
 
@@ -111,17 +122,19 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
       const paymentStatus = 'PAID_STRIPE';
 
-      await onConfirmPayment({
+      const confirmedRes = await onConfirmPayment({
         name,
         email,
         paymentStatus,
         stripePaymentIntentId: stripeIntentData?.paymentIntentId,
       });
 
+      const finalTicketId = confirmedRes?.id || (stripeIntentData
+        ? `TKT-STRIPE-${stripeIntentData.paymentIntentId.slice(-6).toUpperCase()}`
+        : `TKT-${Math.floor(100000 + Math.random() * 900000)}`);
+
       setTicketReceipt({
-        ticketId: stripeIntentData
-          ? `TKT-STRIPE-${stripeIntentData.paymentIntentId.slice(-6).toUpperCase()}`
-          : `TKT-${Math.floor(100000 + Math.random() * 900000)}`,
+        ticketId: finalTicketId,
         seats: selectedSeats.map((s) => `${s.rowLabel}-${s.seatNumber}`).join(', '),
         amount: totalPrice,
         holder: name,
@@ -379,12 +392,23 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               </div>
             </div>
 
-            <button
-              onClick={onClose}
-              className="w-full py-3 bg-[#161616] text-[#D7D5CF] hover:bg-[#E8590C] font-anton text-base tracking-widest uppercase border-2 border-[#161616]"
-            >
-              CLOSE RECEIPT
-            </button>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <button
+                onClick={() => {
+                  onClose();
+                  if (onViewTickets) onViewTickets();
+                }}
+                className="flex-1 py-3 bg-[#E8590C] text-[#FFFFFF] hover:bg-[#161616] font-anton text-sm tracking-widest uppercase border-2 border-[#161616] transition-colors"
+              >
+                VIEW IN MY TICKETS →
+              </button>
+              <button
+                onClick={onClose}
+                className="py-3 px-5 bg-[#161616] text-[#D7D5CF] hover:bg-[#333] font-anton text-sm tracking-widest uppercase border-2 border-[#161616] transition-colors"
+              >
+                CLOSE
+              </button>
+            </div>
           </div>
         )}
       </div>
