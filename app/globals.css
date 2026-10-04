@@ -1,0 +1,72 @@
+@import "tailwindcss";
+
+@layer utilities {
+  .font-anton {
+    font-family: 'Anton', 'Space Grotesk', sans-serif;
+  }
+  .font-mono-spec {
+    font-family: 'IBM Plex Mono', 'Space Mono', monospace;
+  }
+  .font-archivo {
+    font-family: 'Archivo', sans-serif;
+  }
+
+  .bg-concrete-grid {
+    background-color: #D7D5CF;
+    background-image: 
+      linear-gradient(rgba(22, 22, 22, 0.08) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(22, 22, 22, 0.08) 1px, transparent 1px);
+    background-size: 44px 44px;
+  }
+
+  .border-3 {
+    border-width: 3px;
+  }
+
+  .shadow-concrete {
+    box-shadow: 6px 6px 0px #161616;
+  }
+  
+  .shadow-concrete-sm {
+    box-shadow: 4px 4px 0px #161616;
+  }
+
+  .shadow-concrete-lg {
+    box-shadow: 10px 10px 0px #161616;
+  }
+}
+
+body {
+  background-color: #D7D5CF;
+  color: #161616;
+  font-family: 'Archivo', sans-serif;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+}
+
+.registration-cross {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  pointer-events: none;
+  z-index: 10;
+}
+.registration-cross-v {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 2px;
+  height: 100%;
+  background-color: #161616;
+  transform: translateX(-50%);
+}
+.registration-cross-h {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  height: 2px;
+  width: 100%;
+  background-color: #161616;
+  transform: translateY(-50%);
+}
