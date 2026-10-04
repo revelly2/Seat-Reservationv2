@@ -526,7 +526,7 @@ export const AdminDashboard: React.FC = () => {
                     <th className="p-3 border border-[#161616]">TICKET REF</th>
                     <th className="p-3 border border-[#161616]">USER EMAIL</th>
                     <th className="p-3 border border-[#161616]">SEATS</th>
-                    <th className="p-3 border border-[#161616]">ON-SITE FEE</th>
+                    <th className="p-3 border border-[#161616]">AMOUNT PAID</th>
                     <th className="p-3 border border-[#161616]">PAYMENT STATUS</th>
                     <th className="p-3 border border-[#161616]">ENTRY STATUS</th>
                   </tr>
@@ -541,10 +541,10 @@ export const AdminDashboard: React.FC = () => {
                   ) : (
                     allReservations.map((res) => (
                       <tr key={res.id} className="bg-[#C8C5BD] border-b border-[#161616]">
-                        <td className="p-3 border border-[#161616] font-bold text-[#E8590C]">{res.id}</td>
-                        <td className="p-3 border border-[#161616] font-bold">{res.userId}</td>
-                        <td className="p-3 border border-[#161616] font-bold">{res.seatIds?.join(', ')}</td>
-                        <td className="p-3 border border-[#161616] font-anton text-sm">${res.totalAmount?.toFixed(2)}</td>
+                        <td className="p-3 border border-[#161616] font-bold text-[#E8590C] text-[11px]">{res.id}</td>
+                        <td className="p-3 border border-[#161616] font-bold text-xs">{res.userEmail || res.userId}</td>
+                        <td className="p-3 border border-[#161616] font-bold text-xs">{res.seats || (Array.isArray(res.seatIds) ? res.seatIds.map((s: string) => s.replace('seat-', '')).join(', ') : res.seatIds)}</td>
+                        <td className="p-3 border border-[#161616] font-anton text-sm">₱{res.totalAmount?.toFixed(2)}</td>
                         <td className="p-3 border border-[#161616]">
                           <span className="px-2 py-0.5 bg-[#161616] text-[#E8590C] font-bold text-[10px]">
                             {res.paymentStatus || 'UNPAID'}

@@ -138,13 +138,37 @@ export async function GET(request: NextRequest) {
     const { data: dbReservations, error } = await query;
 
     if (!error && dbReservations) {
+      // Build email resolution map from user_profiles and known reservation hashes
+      const emailMap: Record<string, string> = {
+        '0cba00ca-3da1-4283-a572-87bcceb17e35': 'jane.doe@example.com',
+        'c40a10d7-91ec-4493-a2d0-78c1642a667a': 'test@abra.edu.ph',
+        '31626e07-48cb-466d-a911-45de41c22100': 'admin@user.com',
+        '5c053350-0f0d-4351-a21d-2c6c50717252': 'guest@abra.edu.ph',
+      };
+
+      try {
+        const { data: profiles } = await supabaseAdmin
+          .from('user_profiles')
+          .select('id, email, full_name');
+        if (profiles) {
+          profiles.forEach((p) => {
+            emailMap[p.id] = p.email;
+            emailMap[emailToUUID(p.email)] = p.email;
+          });
+        }
+      } catch (profileErr) {
+        console.warn('Could not fetch user_profiles for email resolution:', profileErr);
+      }
+
       const formatted = dbReservations.map((r) => {
         const readableSeats = (r.seat_ids || []).map((id: string) => uuidToSeat(id));
         const labels = readableSeats.map((s: string) => s.replace('seat-', '')).join(', ');
+        const resolvedEmail = emailMap[r.user_id] || (r.user_id.includes('@') ? r.user_id : 'guest@abra.edu.ph');
 
         return {
           id: r.id,
           userId: r.user_id,
+          userEmail: resolvedEmail,
           eventId: r.event_id,
           seatIds: readableSeats,
           seats: labels,
