@@ -59,7 +59,8 @@ export const AdminDashboard: React.FC = () => {
     }
 
     loadAdminData();
-  }, []);
+    // Reload on tab switch so audit logs and analytics reflect gate scans made in this session.
+  }, [activeTab]);
 
   const handleCreateEvent = async (e: React.FormEvent) => {
     e.preventDefault();
