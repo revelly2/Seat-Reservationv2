@@ -67,7 +67,7 @@ export const CartSummary: React.FC<CartSummaryProps> = ({
                       ROW {seat.rowLabel} — SEAT {seat.seatNumber}
                     </div>
                     <div className="text-[10px] text-[#555] uppercase">
-                      {seat.sectionId}
+                      {sections.find((s) => s.id === seat.sectionId)?.name ?? seat.sectionId}
                     </div>
                   </div>
                   <div className="font-anton text-base text-[#161616]">

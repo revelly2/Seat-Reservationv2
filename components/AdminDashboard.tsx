@@ -48,6 +48,14 @@ export const AdminDashboard: React.FC = () => {
       }
 
       try {
+        const venueRes = await fetch('/api/v1/admin/venues');
+        const venueData = await venueRes.json();
+        if (venueData.venue) setVenue(venueData.venue);
+      } catch (err) {
+        console.error(err);
+      }
+
+      try {
         const resRes = await fetch('/api/v1/reservations');
         const resData = await resRes.json();
         if (resData.reservations) {
@@ -257,6 +265,7 @@ export const AdminDashboard: React.FC = () => {
 
         {activeTab === 'VENUE' && (
           <AdminVenueBuilder
+            key={venue.layoutConfig.sections.map((s) => s.basePrice).join('|')}
             venue={venue}
             onUpdateVenue={(updated) => setVenue(updated)}
           />

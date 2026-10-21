@@ -47,6 +47,9 @@ export interface Seat {
   status: SeatStatus;
   currentHolderId?: string | null;
   holdExpiresAt?: Date | null;
+  // Position on the arena plan (drawing points, see lib/arena-layout.json)
+  x?: number;
+  y?: number;
 }
 
 export interface Reservation {

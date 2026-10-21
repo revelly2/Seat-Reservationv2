@@ -9,11 +9,11 @@ import { UserFrontPage } from './UserFrontPage';
 import { RegistrationCrosses } from './RegistrationCrosses';
 import { TicketCard } from './TicketCard';
 import { createClient } from '@/utils/supabase/client';
-import { generateInitialSeats, UNIVERSITY_OF_ABRA_VENUE, MOCK_EVENTS } from '@/lib/mock-data';
+import { generateInitialSeats, UNIVERSITY_OF_ABRA_VENUE, MOCK_EVENTS, ARENA_LAYOUT } from '@/lib/mock-data';
 
 export const UserDashboard: React.FC = () => {
   const [currentView, setCurrentView] = useState<'LANDING' | 'SEATING' | 'MY_RESERVATIONS'>('LANDING');
-  const [venue] = useState<Venue>(UNIVERSITY_OF_ABRA_VENUE);
+  const [venue, setVenue] = useState<Venue>(UNIVERSITY_OF_ABRA_VENUE);
   const [events, setEvents] = useState<Event[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
@@ -137,6 +137,14 @@ export const UserDashboard: React.FC = () => {
     }
 
     loadEvents();
+  }, []);
+
+  // Load block prices saved by admins (Supabase sections)
+  useEffect(() => {
+    fetch('/api/v1/admin/venues')
+      .then((r) => r.json())
+      .then((d) => d.venue && setVenue(d.venue))
+      .catch((err) => console.error('Failed to load venue pricing:', err));
   }, []);
 
   // Fetch distinct seat occupancy specifically for the active event
@@ -324,16 +332,7 @@ export const UserDashboard: React.FC = () => {
     paymentStatus?: string;
     stripePaymentIntentId?: string;
   }) => {
-    const totalCalc = selectedSeats.reduce(
-      (acc, s) =>
-        acc +
-        (s.sectionId === 'sec-vip'
-          ? venue.layoutConfig.sections.find((sec) => sec.id === 'sec-vip')?.basePrice || 250
-          : s.sectionId === 'sec-orchestra'
-          ? venue.layoutConfig.sections.find((sec) => sec.id === 'sec-orchestra')?.basePrice || 150
-          : venue.layoutConfig.sections.find((sec) => sec.id === 'sec-balcony')?.basePrice || 75),
-      0
-    );
+    const totalCalc = totalPrice;
 
     const bookingUserId = currentUser?.email || details.email || 'guest@abra.edu.ph';
 
@@ -368,7 +367,7 @@ export const UserDashboard: React.FC = () => {
       upsertReservation({
         ...data.reservation,
         eventName: selectedEvent ? selectedEvent.title : 'University of Abra Arena Event',
-        seats: selectedSeats.map((s) => `Row ${s.rowLabel} - Seat ${s.seatNumber}`).join(', '),
+        seats: selectedSeats.map((s) => s.id.replace('seat-', '')).join(', '),
       });
 
       setSelectedSeatIds([]);
@@ -390,6 +389,10 @@ export const UserDashboard: React.FC = () => {
 
   const selectedSeats = seats.filter((s) => selectedSeatIds.includes(s.id));
   const sections: Section[] = venue.layoutConfig.sections;
+  const totalPrice = selectedSeats.reduce(
+    (acc, s) => acc + (sections.find((sec) => sec.id === s.sectionId)?.basePrice ?? 0),
+    0
+  );
 
   const technicalIndexProjects = [
     ['K-01', 'VENUE LOCATION', 'UNIVERSITY OF ABRA ARENA'],
@@ -512,7 +515,7 @@ export const UserDashboard: React.FC = () => {
             {/* Filter Pills */}
             <div className="bg-[#D7D5CF] border-3 border-[#161616] p-4 shadow-concrete-sm flex flex-wrap items-center gap-3">
               <span className="text-xs text-[#555] font-bold uppercase tracking-wider pr-2">
-                FILTER TIER:
+                BLOCK:
               </span>
               <button
                 onClick={() => setFilterSectionId('ALL')}
@@ -522,7 +525,7 @@ export const UserDashboard: React.FC = () => {
                     : 'bg-[#C8C5BD] text-[#161616] hover:bg-[#FFFFFF]'
                 }`}
               >
-                ALL SECTIONS
+                WHOLE ARENA
               </button>
               {sections.map((sec) => (
                 <button
@@ -548,28 +551,23 @@ export const UserDashboard: React.FC = () => {
                   selectedSeatIds={selectedSeatIds}
                   onToggleSeat={handleToggleSeat}
                   filterSectionId={filterSectionId}
+                  onSelectBlock={setFilterSectionId}
                 />
 
                 {/* Legend */}
                 <div className="bg-[#D7D5CF] border-3 border-[#161616] p-4 text-xs font-mono-spec font-bold text-[#161616] shadow-concrete-sm flex flex-wrap items-center justify-around gap-2">
+                  {sections.map((sec, i) => (
+                    <div key={sec.id} className="flex items-center gap-2">
+                      <span className="w-4 h-4 rounded-full border border-[#161616]" style={{ background: ARENA_LAYOUT.blocks[i]?.color }}></span>
+                      <span>{sec.name} (₱{sec.basePrice})</span>
+                    </div>
+                  ))}
                   <div className="flex items-center gap-2">
-                    <span className="w-4 h-4 bg-[#E8590C] border border-[#161616]"></span>
-                    <span>VIP PATRON (₱250)</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="w-4 h-4 bg-[#3A3936] border border-[#161616]"></span>
-                    <span>LOWER BOX (₱150)</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="w-4 h-4 bg-[#8F8D86] border border-[#161616]"></span>
-                    <span>UPPER BLEACHERS (₱75)</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="w-4 h-4 bg-[#FFFFFF] border-2 border-[#161616]"></span>
+                    <span className="w-4 h-4 rounded-full bg-[#FFFFFF] border-2 border-[#161616]"></span>
                     <span>SELECTED</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="w-4 h-4 bg-[#161616] border border-[#161616]"></span>
+                    <span className="w-4 h-4 rounded-full bg-[#161616] border border-[#161616]"></span>
                     <span>BOOKED</span>
                   </div>
                 </div>
@@ -652,16 +650,7 @@ export const UserDashboard: React.FC = () => {
       <CheckoutModal
         isOpen={isCheckoutOpen}
         selectedSeats={selectedSeats}
-        totalPrice={selectedSeats.reduce(
-          (acc, s) =>
-            acc +
-            (s.sectionId === 'sec-vip'
-              ? sections.find((sec) => sec.id === 'sec-vip')?.basePrice || 250
-              : s.sectionId === 'sec-orchestra'
-              ? sections.find((sec) => sec.id === 'sec-orchestra')?.basePrice || 150
-              : sections.find((sec) => sec.id === 'sec-balcony')?.basePrice || 75),
-          0
-        )}
+        totalPrice={totalPrice}
         onClose={() => {
           setIsCheckoutOpen(false);
           if (isHeld) {

@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { Section, Venue } from '@/types/seat-reservation';
 import { RegistrationCrosses } from './RegistrationCrosses';
+import { ARENA_LAYOUT } from '@/lib/mock-data';
 
 interface AdminVenueBuilderProps {
   venue: Venue;
@@ -15,8 +16,6 @@ export const AdminVenueBuilder: React.FC<AdminVenueBuilderProps> = ({
 }) => {
   const [role, setRole] = useState<'ADMIN' | 'USER'>('ADMIN');
   const [venueName, setVenueName] = useState(venue.name);
-  const [rows, setRows] = useState(venue.layoutConfig.rows);
-  const [cols, setCols] = useState(venue.layoutConfig.columns);
   const [sections, setSections] = useState<Section[]>(venue.layoutConfig.sections);
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
@@ -40,8 +39,6 @@ export const AdminVenueBuilder: React.FC<AdminVenueBuilderProps> = ({
         },
         body: JSON.stringify({
           name: venueName,
-          rows,
-          columns: cols,
           sections,
         }),
       });
@@ -127,52 +124,37 @@ export const AdminVenueBuilder: React.FC<AdminVenueBuilderProps> = ({
               className="w-full bg-[#D7D5CF] border-2 border-[#161616] px-3 py-2 text-xs font-bold text-[#161616] focus:outline-none focus:bg-[#FFFFFF]"
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-bold text-[#555] uppercase mb-1">ROWS</label>
-              <input
-                type="number"
-                min="1"
-                max="20"
-                value={rows}
-                onChange={(e) => setRows(parseInt(e.target.value) || 1)}
-                className="w-full bg-[#D7D5CF] border-2 border-[#161616] px-3 py-2 text-xs font-bold text-[#161616] focus:outline-none focus:bg-[#FFFFFF]"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-[#555] uppercase mb-1">COLS</label>
-              <input
-                type="number"
-                min="1"
-                max="20"
-                value={cols}
-                onChange={(e) => setCols(parseInt(e.target.value) || 1)}
-                className="w-full bg-[#D7D5CF] border-2 border-[#161616] px-3 py-2 text-xs font-bold text-[#161616] focus:outline-none focus:bg-[#FFFFFF]"
-              />
-            </div>
+          <div className="text-xs font-bold text-[#555] uppercase space-y-1">
+            <div>CAPACITY: <span className="text-[#161616]">{ARENA_LAYOUT.seats.length.toLocaleString()} SEATS</span></div>
+            <div>BLOCKS: <span className="text-[#161616]">{ARENA_LAYOUT.blocks.length}</span> · ROWS A–I</div>
+            <div className="text-[10px] normal-case font-normal">Layout from MASTER SEAT PLAN (second floor plan).</div>
           </div>
         </div>
 
         {/* Section Tier Pricing Builder */}
         <div className="md:col-span-2 bg-[#C8C5BD] p-5 border-2 border-[#161616] space-y-4">
           <h3 className="font-anton text-base tracking-wider uppercase text-[#161616]">
-            PRICING TIER OVERRIDES
+            BLOCK PRICING (₱ PER SEAT)
           </h3>
           <div className="space-y-3">
-            {sections.map((sec) => (
+            {sections.map((sec, i) => (
               <div
                 key={sec.id}
                 className="flex items-center justify-between p-3 bg-[#D7D5CF] border-2 border-[#161616]"
               >
                 <div>
                   <div className="font-bold text-[#161616] text-xs uppercase">{sec.name}</div>
-                  <div className="text-[10px] text-[#555]">ID: {sec.id}</div>
+                  <div className="text-[10px] text-[#555]">
+                    {ARENA_LAYOUT.seats.filter((s) => s[0] === i).length} SEATS
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-[#161616] font-bold text-xs">₱</span>
                   <input
                     type="number"
                     step="5"
+                    min="0"
+                    aria-label={`${sec.name} price`}
                     value={sec.basePrice}
                     onChange={(e) => handlePriceChange(sec.id, parseFloat(e.target.value) || 0)}
                     className="w-24 bg-[#FFFFFF] border-2 border-[#161616] px-3 py-1 text-xs font-anton text-[#161616] focus:outline-none"
