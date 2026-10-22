@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseAdmin, emailToUUID } from '@/lib/supabase-admin';
+import { supabaseAdmin, emailToUUID, findTakenSeats } from '@/lib/supabase-admin';
 import { Reservation } from '@/types/seat-reservation';
 import { seatToUUID, uuidToSeat } from '@/lib/mock-data';
 
@@ -26,6 +26,14 @@ export async function POST(request: NextRequest) {
     const validUserId = emailToUUID(userId);
     const validEventId = uuidRegex.test(eventId) ? eventId : '00000000-0000-4000-a000-000000000001';
     const validSeatIds = seatIds.map((s: string) => seatToUUID(s));
+
+    const taken = await findTakenSeats(validEventId, validSeatIds);
+    if (taken.length > 0) {
+      return NextResponse.json(
+        { error: `SEAT ALREADY RESERVED: ${taken.map((s) => uuidToSeat(s).replace('seat-', '')).join(', ')}`, takenSeatIds: taken.map(uuidToSeat) },
+        { status: 409 }
+      );
+    }
 
     const newReservation: Reservation = {
       id: reservationId,

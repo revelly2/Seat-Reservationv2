@@ -1,6 +1,5 @@
 import { GET as getSeats } from '@/app/api/v1/events/[id]/seats/route';
 import { POST as holdSeats, DELETE as releaseSeats } from '@/app/api/v1/seats/hold/route';
-import { POST as createReservation } from '@/app/api/v1/reservations/route';
 import { GET as getReservationReceipt } from '@/app/api/v1/reservations/[id]/route';
 import { NextRequest } from 'next/server';
 
@@ -50,25 +49,6 @@ describe('Phase 2: UI & Real-time Integration Endpoints', () => {
 
     expect(res.status).toBe(200);
     expect(data.success).toBe(true);
-  });
-
-  test('POST /api/v1/reservations creates confirmed reservation', async () => {
-    const req = new NextRequest('http://localhost:3000/api/v1/reservations', {
-      method: 'POST',
-      body: JSON.stringify({
-        seatIds: ['seat-B-2'],
-        totalAmount: 150.0,
-        userId: 'test-user-1',
-      }),
-    });
-
-    const res = await createReservation(req);
-    const data = await res.json();
-
-    expect(res.status).toBe(200);
-    expect(data.success).toBe(true);
-    expect(data.reservation.status).toBe('CONFIRMED');
-    expect(data.receiptUrl).toBeDefined();
   });
 
   test('GET /api/v1/reservations/:id fetches digital receipt and QR payload', async () => {

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { stripe } from '@/lib/stripe';
+import { findTakenSeats } from '@/lib/supabase-admin';
+import { seatToUUID, uuidToSeat } from '@/lib/mock-data';
 
 export async function POST(request: NextRequest) {
   try {
@@ -10,6 +12,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'Invalid payment amount specified' },
         { status: 400 }
+      );
+    }
+
+    // Refuse seats someone else already reserved before charging the card.
+    if (!Array.isArray(seatIds) || seatIds.length === 0 || !eventId) {
+      return NextResponse.json({ error: 'seatIds and eventId are required' }, { status: 400 });
+    }
+    const taken = await findTakenSeats(eventId, seatIds.map((s: string) => seatToUUID(s)));
+    if (taken.length > 0) {
+      return NextResponse.json(
+        { error: `SEAT ALREADY RESERVED: ${taken.map((s) => uuidToSeat(s).replace('seat-', '')).join(', ')}. Please choose other seats.` },
+        { status: 409 }
       );
     }
 

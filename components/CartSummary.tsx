@@ -7,8 +7,6 @@ import { RegistrationCrosses } from './RegistrationCrosses';
 interface CartSummaryProps {
   selectedSeats: Seat[];
   sections: Section[];
-  isHeld?: boolean;
-  holdExpiresAt?: string | null;
   onHoldSeats?: () => void;
   onProceedCheckout: () => void;
   onClearSelection: () => void;
