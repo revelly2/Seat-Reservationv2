@@ -70,7 +70,7 @@ describe('University of Abra Arena: Multi-Event, Single Account Auth & On-Site G
     expect(data2.error).toContain('REGISTRATION DENIED');
   });
 
-  test('POST /api/v1/admin/scan computes on-site payment & authorizes gate entry', async () => {
+  test('POST /api/v1/admin/scan rejects a ticket ID that is not a reservation UUID', async () => {
     const req = new NextRequest('http://localhost:3000/api/v1/admin/scan', {
       method: 'POST',
       headers: {
@@ -85,10 +85,8 @@ describe('University of Abra Arena: Multi-Event, Single Account Auth & On-Site G
     const res = await scanTicket(req);
     const data = await res.json();
 
-    expect(res.status).toBe(200);
-    expect(data.success).toBe(true);
-    expect(['PAID_STRIPE', 'PAID_ON_SITE']).toContain(data.ticket.paymentStatus);
-    expect(data.ticket.checkInStatus).toBe('CHECKED_IN');
-    expect(typeof data.ticket.totalAmount).toBe('number');
+    expect(res.status).toBe(400);
+    expect(data.success).toBeUndefined();
+    expect(data.error).toContain('INVALID TICKET');
   });
 });

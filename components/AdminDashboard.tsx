@@ -4,11 +4,12 @@ import React, { useState, useEffect } from 'react';
 import { Venue, Event } from '@/types/seat-reservation';
 import { AdminVenueBuilder } from './AdminVenueBuilder';
 import { AdminScanner } from './AdminScanner';
+import { AdminAnalyticsDashboard } from './AdminAnalyticsDashboard';
 import { RegistrationCrosses } from './RegistrationCrosses';
 import { UNIVERSITY_OF_ABRA_VENUE, MOCK_EVENTS } from '@/lib/mock-data';
 
 export const AdminDashboard: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'SCANNER' | 'EVENTS' | 'VENUE' | 'AUDIT'>('SCANNER');
+  const [activeTab, setActiveTab] = useState<'ANALYTICS' | 'SCANNER' | 'EVENTS' | 'VENUE' | 'AUDIT'>('ANALYTICS');
   const [venue, setVenue] = useState<Venue>(UNIVERSITY_OF_ABRA_VENUE);
   const [events, setEvents] = useState<Event[]>(MOCK_EVENTS);
   const [allReservations, setAllReservations] = useState<any[]>([]);
@@ -26,10 +27,11 @@ export const AdminDashboard: React.FC = () => {
   const [editDate, setEditDate] = useState('');
   const [editStatus, setEditStatus] = useState<string>('UPCOMING');
   const [eventActionMsg, setEventActionMsg] = useState<string | null>(null);
+  const [eventFilter, setEventFilter] = useState<'ALL' | 'ACTIVE' | 'ARCHIVED'>('ALL');
 
   const refreshEvents = async () => {
     try {
-      const evtRes = await fetch('/api/v1/events');
+      const evtRes = await fetch('/api/v1/events?includeArchived=true');
       const evtData = await evtRes.json();
       if (evtData.events && evtData.events.length > 0) {
         setEvents(evtData.events);
@@ -39,10 +41,63 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
+  const handlePurgeOutdated = async () => {
+    if (!window.confirm('Are you sure you want to permanently delete all out-of-date events from the database?')) {
+      return;
+    }
+    setEventActionMsg('Purging out-of-date events...');
+    try {
+      const res = await fetch('/api/v1/events?action=purge-outdated', {
+        method: 'DELETE',
+        headers: {
+          'x-user-role': 'ADMIN',
+        },
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setEventActionMsg(`✓ ${data.message}`);
+        await refreshEvents();
+      } else {
+        setEventActionMsg(`✖ ${data.error || 'Failed to purge events'}`);
+      }
+    } catch (err) {
+      setEventActionMsg('✖ Network error purging events');
+    }
+  };
+
+  const handleArchiveOutdated = async () => {
+    setEventActionMsg('Archiving out-of-date events...');
+    try {
+      const res = await fetch('/api/v1/events?action=archive-outdated', {
+        method: 'DELETE',
+        headers: {
+          'x-user-role': 'ADMIN',
+        },
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setEventActionMsg(`✓ ${data.message}`);
+        await refreshEvents();
+      } else {
+        setEventActionMsg(`✖ ${data.error || 'Failed to archive events'}`);
+      }
+    } catch (err) {
+      setEventActionMsg('✖ Network error archiving events');
+    }
+  };
+
   useEffect(() => {
     async function loadAdminData() {
       try {
         await refreshEvents();
+      } catch (err) {
+        console.error(err);
+      }
+
+      try {
+        const venueRes = await fetch('/api/v1/admin/venues');
+        const venueData = await venueRes.json();
+        if (venueData.venue) setVenue(venueData.venue);
       } catch (err) {
         console.error(err);
       }
@@ -59,7 +114,8 @@ export const AdminDashboard: React.FC = () => {
     }
 
     loadAdminData();
-  }, []);
+    // Reload on tab switch so audit logs and analytics reflect gate scans made in this session.
+  }, [activeTab]);
 
   const handleCreateEvent = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -200,6 +256,16 @@ export const AdminDashboard: React.FC = () => {
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center bg-[#2A2926] border-2 border-[#D7D5CF] p-1 gap-1">
             <button
+              onClick={() => setActiveTab('ANALYTICS')}
+              className={`px-3 py-1.5 text-xs font-bold uppercase transition-all ${
+                activeTab === 'ANALYTICS'
+                  ? 'bg-[#E8590C] text-[#FFFFFF]'
+                  : 'text-[#D7D5CF] hover:bg-[#3A3936]'
+              }`}
+            >
+              📈 OVERVIEW & FLOW
+            </button>
+            <button
               onClick={() => setActiveTab('SCANNER')}
               className={`px-3 py-1.5 text-xs font-bold uppercase transition-all ${
                 activeTab === 'SCANNER'
@@ -252,10 +318,31 @@ export const AdminDashboard: React.FC = () => {
 
       {/* Main Admin Workspace */}
       <main className="max-w-7xl w-full mx-auto px-6 py-8 flex-1">
+        {activeTab === 'ANALYTICS' && (
+          <AdminAnalyticsDashboard
+            venue={venue}
+            events={events}
+            reservations={allReservations}
+            onRefreshData={async () => {
+              await refreshEvents();
+              try {
+                const resRes = await fetch('/api/v1/reservations');
+                const resData = await resRes.json();
+                if (resData.reservations) {
+                  setAllReservations(resData.reservations);
+                }
+              } catch (err) {
+                console.error(err);
+              }
+            }}
+          />
+        )}
+
         {activeTab === 'SCANNER' && <AdminScanner />}
 
         {activeTab === 'VENUE' && (
           <AdminVenueBuilder
+            key={venue.layoutConfig.sections.map((s) => s.basePrice).join('|')}
             venue={venue}
             onUpdateVenue={(updated) => setVenue(updated)}
           />
@@ -348,9 +435,67 @@ export const AdminDashboard: React.FC = () => {
 
               {/* Active Events List */}
               <div className="lg:col-span-2 space-y-4">
-                <h3 className="font-anton text-lg tracking-wider text-[#161616] uppercase">
-                  PUBLISHED ARENA EVENTS ({events.length})
-                </h3>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b-2 border-[#161616] gap-3">
+                  <h3 className="font-anton text-lg tracking-wider text-[#161616] uppercase">
+                    PUBLISHED ARENA EVENTS ({events.length})
+                  </h3>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleArchiveOutdated}
+                      title="Automatically set past events to ARCHIVED in database"
+                      className="px-2.5 py-1 text-[11px] bg-[#161616] hover:bg-[#E8590C] text-[#D7D5CF] hover:text-[#FFFFFF] font-bold uppercase border border-[#161616] transition-all"
+                    >
+                      📦 AUTO-ARCHIVE EXPIRED
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handlePurgeOutdated}
+                      title="Permanently remove all past/outdated events from database"
+                      className="px-2.5 py-1 text-[11px] bg-[#8B0000] hover:bg-[#FF0000] text-[#FFFFFF] font-bold uppercase border border-[#161616] transition-all"
+                    >
+                      🗑️ PURGE OUTDATED
+                    </button>
+                  </div>
+                </div>
+
+                {/* Filter Tabs */}
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEventFilter('ALL')}
+                    className={`px-3 py-1 text-xs font-bold uppercase border-2 border-[#161616] transition-all ${
+                      eventFilter === 'ALL'
+                        ? 'bg-[#161616] text-[#FFFFFF]'
+                        : 'bg-[#C8C5BD] text-[#161616] hover:bg-[#D7D5CF]'
+                    }`}
+                  >
+                    ALL ({events.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEventFilter('ACTIVE')}
+                    className={`px-3 py-1 text-xs font-bold uppercase border-2 border-[#161616] transition-all ${
+                      eventFilter === 'ACTIVE'
+                        ? 'bg-[#161616] text-[#2ECC40]'
+                        : 'bg-[#C8C5BD] text-[#161616] hover:bg-[#D7D5CF]'
+                    }`}
+                  >
+                    UPCOMING ({events.filter((e) => e.status !== 'ARCHIVED' && new Date(e.eventDate).getTime() >= Date.now()).length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEventFilter('ARCHIVED')}
+                    className={`px-3 py-1 text-xs font-bold uppercase border-2 border-[#161616] transition-all ${
+                      eventFilter === 'ARCHIVED'
+                        ? 'bg-[#161616] text-[#E8590C]'
+                        : 'bg-[#C8C5BD] text-[#161616] hover:bg-[#D7D5CF]'
+                    }`}
+                  >
+                    OUTDATED / ARCHIVED ({events.filter((e) => e.status === 'ARCHIVED' || new Date(e.eventDate).getTime() < Date.now()).length})
+                  </button>
+                </div>
 
                 <div className="space-y-3">
                   {events.length === 0 ? (
@@ -358,7 +503,15 @@ export const AdminDashboard: React.FC = () => {
                       No events currently registered in database.
                     </div>
                   ) : (
-                    events.map((evt) => {
+                    events
+                      .filter((evt) => {
+                        const isPast = new Date(evt.eventDate).getTime() < Date.now();
+                        const isArchived = evt.status === 'ARCHIVED' || isPast;
+                        if (eventFilter === 'ACTIVE') return !isArchived;
+                        if (eventFilter === 'ARCHIVED') return isArchived;
+                        return true;
+                      })
+                      .map((evt) => {
                       const isEditing = editingEventId === evt.id;
 
                       if (isEditing) {
@@ -434,6 +587,7 @@ export const AdminDashboard: React.FC = () => {
                                     <option value="ONGOING">ONGOING</option>
                                     <option value="COMPLETED">COMPLETED</option>
                                     <option value="CANCELLED">CANCELLED</option>
+                                    <option value="ARCHIVED">ARCHIVED</option>
                                   </select>
                                 </div>
                               </div>
@@ -458,10 +612,15 @@ export const AdminDashboard: React.FC = () => {
                         );
                       }
 
+                      const isPast = new Date(evt.eventDate).getTime() < Date.now();
+                      const isArchived = evt.status === 'ARCHIVED' || isPast;
+
                       return (
                         <div
                           key={evt.id}
-                          className="p-4 bg-[#C8C5BD] border-2 border-[#161616] flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                          className={`p-4 border-2 border-[#161616] flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+                            isArchived ? 'bg-[#BCB9B0] opacity-85' : 'bg-[#C8C5BD]'
+                          }`}
                         >
                           <div className="space-y-1">
                             <div className="text-[10px] text-[#E8590C] font-bold tracking-widest uppercase">
@@ -476,8 +635,14 @@ export const AdminDashboard: React.FC = () => {
                           </div>
 
                           <div className="flex items-center gap-2 self-end sm:self-center">
-                            <span className="px-2.5 py-1 bg-[#161616] text-[#D7D5CF] text-[10px] font-bold uppercase border border-[#161616]">
-                              {evt.status}
+                            <span
+                              className={`px-2.5 py-1 text-[10px] font-bold uppercase border border-[#161616] ${
+                                isArchived
+                                  ? 'bg-[#E8590C] text-[#FFFFFF]'
+                                  : 'bg-[#161616] text-[#2ECC40]'
+                              }`}
+                            >
+                              {isArchived ? '[OUTDATED / ARCHIVED]' : `[${evt.status}]`}
                             </span>
                             <button
                               type="button"

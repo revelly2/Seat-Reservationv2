@@ -66,7 +66,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           body: JSON.stringify({
             amount: totalPrice,
             seatIds: selectedSeats.map((s) => s.id),
-            seatsLabel: selectedSeats.map((s) => `${s.rowLabel}-${s.seatNumber}`).join(', '),
+            seatsLabel: selectedSeats.map((s) => s.id.replace('seat-', '')).join(', '),
             userEmail: email,
             eventId,
             eventTitle,
@@ -83,7 +83,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           'sotero_pending_checkout',
           JSON.stringify({
             seatIds: selectedSeats.map((s) => s.id),
-            seatsLabel: selectedSeats.map((s) => `${s.rowLabel}-${s.seatNumber}`).join(', '),
+            seatsLabel: selectedSeats.map((s) => s.id.replace('seat-', '')).join(', '),
             totalPrice,
             email,
             name,
@@ -135,7 +135,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
       setTicketReceipt({
         ticketId: finalTicketId,
-        seats: selectedSeats.map((s) => `${s.rowLabel}-${s.seatNumber}`).join(', '),
+        seats: selectedSeats.map((s) => s.id.replace('seat-', '')).join(', '),
         amount: totalPrice,
         holder: name,
         paymentMode,

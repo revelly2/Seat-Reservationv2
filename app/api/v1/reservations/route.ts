@@ -1,16 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabase-admin';
+import { supabaseAdmin, emailToUUID } from '@/lib/supabase-admin';
 import { Reservation } from '@/types/seat-reservation';
 import { seatToUUID, uuidToSeat } from '@/lib/mock-data';
-import { createHash } from 'crypto';
-
-function emailToUUID(email: string): string {
-  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(email)) {
-    return email;
-  }
-  const hash = createHash('md5').update(email.trim().toLowerCase()).digest('hex');
-  return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
-}
 
 export async function POST(request: NextRequest) {
   try {
