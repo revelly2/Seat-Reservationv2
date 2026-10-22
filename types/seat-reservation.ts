@@ -26,7 +26,7 @@ export interface Event {
   title: string;
   description: string;
   eventDate: string;
-  status: 'UPCOMING' | 'LIVE' | 'COMPLETED' | 'CANCELLED';
+  status: 'UPCOMING' | 'LIVE' | 'COMPLETED' | 'CANCELLED' | 'ARCHIVED';
   created_at?: string;
 }
 
