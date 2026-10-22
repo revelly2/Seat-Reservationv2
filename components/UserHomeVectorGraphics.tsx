@@ -306,15 +306,6 @@ export const SeatSelectionHoldVector: React.FC<VectorProps> = ({
         <rect x="0" y="0" width="12" height="38" rx="2" fill={accentColor} stroke="#161616" strokeWidth="2" />
         <rect x="10" y="26" width="32" height="12" rx="2" fill={accentColor} stroke="#161616" strokeWidth="2" />
         <line x1="32" y1="38" x2="32" y2="55" stroke="#161616" strokeWidth="3" />
-
-        {/* Lock / Security Shield Badge floating above */}
-        <g transform="translate(8, -32)">
-          <rect x="0" y="0" width="34" height="24" rx="2" fill="#161616" stroke="#FFFFFF" strokeWidth="1.5" />
-          <path d="M12 10 C12 7, 22 7, 22 10 L22 13 L12 13 Z" stroke={accentColor} strokeWidth="1.5" fill="none" />
-          <text x="17" y="19" fill={accentColor} fontSize="8" fontWeight="bold" textAnchor="middle" fontFamily="monospace">
-            10m
-          </text>
-        </g>
       </g>
 
       {/* Minimalist Human Hand Selecting Seat */}
@@ -326,12 +317,12 @@ export const SeatSelectionHoldVector: React.FC<VectorProps> = ({
         <circle cx="-22" cy="86" r="3.5" fill={accentColor} />
       </g>
 
-      {/* Concurrency Indicator */}
+      {/* Live Availability Indicator */}
       <g transform="translate(30, 25)">
         <rect x="0" y="0" width="130" height="24" fill="#C8C5BD" stroke="#161616" strokeWidth="1.5" />
         <circle cx="12" cy="12" r="4" fill="#2ECC40" />
         <text x="24" y="16" fill="#161616" fontSize="8" fontWeight="bold" fontFamily="monospace">
-          REALTIME ROW-LOCK ACTIVE
+          LIVE SEAT AVAILABILITY
         </text>
       </g>
     </svg>
