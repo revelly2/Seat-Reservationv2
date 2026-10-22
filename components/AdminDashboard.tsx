@@ -10,6 +10,20 @@ import { UNIVERSITY_OF_ABRA_VENUE, MOCK_EVENTS } from '@/lib/mock-data';
 
 export const AdminDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'ANALYTICS' | 'SCANNER' | 'EVENTS' | 'VENUE' | 'AUDIT'>('ANALYTICS');
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  // shortcut: role comes from the browser's saved login, so this only hides the page; admin APIs still need server-side auth.
+  useEffect(() => {
+    try {
+      if (JSON.parse(localStorage.getItem('sotero_user') || 'null')?.role === 'ADMIN') return setIsAdmin(true);
+    } catch {}
+    window.location.replace('/');
+  }, []);
+
+  const handleLogout = () => {
+    localStorage.removeItem('sotero_user');
+    window.location.replace('/');
+  };
   const [venue, setVenue] = useState<Venue>(UNIVERSITY_OF_ABRA_VENUE);
   const [events, setEvents] = useState<Event[]>(MOCK_EVENTS);
   const [allReservations, setAllReservations] = useState<any[]>([]);
@@ -239,6 +253,8 @@ export const AdminDashboard: React.FC = () => {
     ['A-04', 'PAYMENT AUDIT', 'ON-SITE CALCULATOR ACTIVE'],
   ];
 
+  if (!isAdmin) return null;
+
   return (
     <div className="min-h-screen bg-concrete-grid text-[#161616] flex flex-col justify-between">
       {/* Dedicated Admin Header */}
@@ -307,12 +323,20 @@ export const AdminDashboard: React.FC = () => {
             </button>
           </div>
 
-          <a
-            href="/"
-            className="px-3 py-1.5 text-xs font-bold uppercase bg-[#D7D5CF] hover:bg-[#E8590C] text-[#161616] hover:text-[#FFFFFF] border-2 border-[#D7D5CF] transition-all"
-          >
-            ← USER PORTAL
-          </a>
+          <div className="flex items-center gap-2">
+            <a
+              href="/"
+              className="px-3 py-1.5 text-xs font-bold uppercase bg-[#D7D5CF] hover:bg-[#E8590C] text-[#161616] hover:text-[#FFFFFF] border-2 border-[#D7D5CF] transition-all"
+            >
+              ← USER PORTAL
+            </a>
+            <button
+              onClick={handleLogout}
+              className="px-3 py-1.5 text-xs font-bold uppercase bg-[#8B1A1A] hover:bg-[#E8590C] text-[#FFFFFF] border-2 border-[#D7D5CF] transition-all"
+            >
+              LOG OUT
+            </button>
+          </div>
         </div>
       </header>
 

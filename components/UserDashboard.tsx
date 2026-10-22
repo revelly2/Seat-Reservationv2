@@ -21,8 +21,6 @@ export const UserDashboard: React.FC = () => {
   const [seats, setSeats] = useState<Seat[]>([]);
   const [selectedSeatIds, setSelectedSeatIds] = useState<string[]>([]);
   const [filterSectionId, setFilterSectionId] = useState<string>('ALL');
-  const [isHeld, setIsHeld] = useState<boolean>(false);
-  const [holdExpiresAt, setHoldExpiresAt] = useState<string | null>(null);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [realtimeStatus, setRealtimeStatus] = useState<'CONNECTED' | 'DISCONNECTED'>('CONNECTED');
@@ -44,19 +42,19 @@ export const UserDashboard: React.FC = () => {
   const loadUserReservations = useCallback(async () => {
     try {
       const email = currentUser?.email;
+      // Logged-out visitors have no tickets; never load other people's reservations.
+      if (!email) return setUserReservations([]);
       let storedTicketIds: string[] = [];
       try {
         storedTicketIds = JSON.parse(localStorage.getItem('sotero_user_booked_tickets') || '[]');
       } catch (e) {}
 
-      // Always fetch user tickets or all tickets for guest
-      const url = email ? `/api/v1/reservations?userId=${encodeURIComponent(email)}` : '/api/v1/reservations';
-      const res = await fetch(url);
+      const res = await fetch(`/api/v1/reservations?userId=${encodeURIComponent(email)}`);
       const data = await res.json();
       let combined: any[] = Array.isArray(data.reservations) ? [...data.reservations] : [];
 
       // If user is logged in, also ensure any tickets booked on this device are included
-      if (email && storedTicketIds.length > 0) {
+      if (storedTicketIds.length > 0) {
         const allRes = await fetch('/api/v1/reservations');
         const allData = await allRes.json();
         if (Array.isArray(allData.reservations)) {
@@ -65,20 +63,18 @@ export const UserDashboard: React.FC = () => {
         }
       }
 
-      if (combined.length > 0) {
-        const enriched = combined.map((r: any) => {
-          const ev = events.find((e) => e.id === r.eventId);
-          return {
-            ...r,
-            eventName: ev?.title || r.eventName || 'University of Abra Arena Event',
-          };
-        });
-        const map = new Map();
-        enriched.forEach((r: any) => {
-          if (r.id) map.set(r.id, r);
-        });
-        setUserReservations(Array.from(map.values()));
-      }
+      const enriched = combined.map((r: any) => {
+        const ev = events.find((e) => e.id === r.eventId);
+        return {
+          ...r,
+          eventName: ev?.title || r.eventName || 'University of Abra Arena Event',
+        };
+      });
+      const map = new Map();
+      enriched.forEach((r: any) => {
+        if (r.id) map.set(r.id, r);
+      });
+      setUserReservations(Array.from(map.values()));
     } catch (err) {
       console.error('Failed to load user reservations:', err);
     }
@@ -99,11 +95,13 @@ export const UserDashboard: React.FC = () => {
   const handleLoginSuccess = (user: UserProfile) => {
     setCurrentUser(user);
     localStorage.setItem('sotero_user', JSON.stringify(user));
+    if (user.role === 'ADMIN') window.location.href = '/admin';
   };
 
   const handleLogout = () => {
     setCurrentUser(null);
     localStorage.removeItem('sotero_user');
+    setCurrentView('LANDING');
   };
 
   // Load unique events on mount
@@ -221,41 +219,6 @@ export const UserDashboard: React.FC = () => {
       setSelectedSeatIds((prev) => prev.filter((id) => id !== seat.id));
     } else {
       setSelectedSeatIds((prev) => [...prev, seat.id]);
-    }
-  };
-
-  const handleHoldSeats = async () => {
-    if (selectedSeatIds.length === 0) return;
-    setIsLoading(true);
-
-    try {
-      const res = await fetch('/api/v1/seats/hold', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          seatIds: selectedSeatIds,
-          userId: currentUser ? currentUser.email : 'guest-user',
-        }),
-      });
-
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setIsHeld(true);
-        setHoldExpiresAt(data.expiresAt);
-        setSeats((prev) =>
-          prev.map((s) =>
-            selectedSeatIds.includes(s.id)
-              ? { ...s, status: 'HELD', currentHolderId: currentUser?.email || 'guest-user' }
-              : s
-          )
-        );
-      } else {
-        alert(data.error || 'Failed to hold seats');
-      }
-    } catch (err: any) {
-      alert('Network error locking seats');
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -378,8 +341,6 @@ export const UserDashboard: React.FC = () => {
 
   const handleClearSelection = () => {
     setSelectedSeatIds([]);
-    setIsHeld(false);
-    setHoldExpiresAt(null);
   };
 
   const handleSelectEventFromLanding = (evt: Event) => {
@@ -437,24 +398,19 @@ export const UserDashboard: React.FC = () => {
             >
               🎟️ SEAT MAP
             </button>
-            <button
-              onClick={() => setCurrentView('MY_RESERVATIONS')}
-              className={`px-3.5 py-1.5 text-xs font-bold uppercase transition-all ${
-                currentView === 'MY_RESERVATIONS'
-                  ? 'bg-[#161616] text-[#D7D5CF]'
-                  : 'text-[#161616] hover:bg-[#D7D5CF]'
-              }`}
-            >
-              📜 MY TICKETS ({userReservations.length})
-            </button>
+            {currentUser && (
+              <button
+                onClick={() => setCurrentView('MY_RESERVATIONS')}
+                className={`px-3.5 py-1.5 text-xs font-bold uppercase transition-all ${
+                  currentView === 'MY_RESERVATIONS'
+                    ? 'bg-[#161616] text-[#D7D5CF]'
+                    : 'text-[#161616] hover:bg-[#D7D5CF]'
+                }`}
+              >
+                📜 MY TICKETS ({userReservations.length})
+              </button>
+            )}
           </div>
-
-          <a
-            href="/admin"
-            className="px-3 py-1.5 text-xs font-bold uppercase bg-[#E8590C] hover:bg-[#161616] text-[#FFFFFF] border-2 border-[#161616] transition-all"
-          >
-            🔑 ADMIN PORTAL →
-          </a>
         </div>
       </header>
 
@@ -466,6 +422,7 @@ export const UserDashboard: React.FC = () => {
             currentUser={currentUser}
             onLoginSuccess={handleLoginSuccess}
             onLogout={handleLogout}
+            sections={venue.layoutConfig.sections}
           />
         )}
 
@@ -651,12 +608,7 @@ export const UserDashboard: React.FC = () => {
         isOpen={isCheckoutOpen}
         selectedSeats={selectedSeats}
         totalPrice={totalPrice}
-        onClose={() => {
-          setIsCheckoutOpen(false);
-          if (isHeld) {
-            handleClearSelection();
-          }
-        }}
+        onClose={() => setIsCheckoutOpen(false)}
         onConfirmPayment={handleConfirmPayment}
         eventId={selectedEvent ? selectedEvent.id : '00000000-0000-4000-a000-000000000001'}
         eventTitle={selectedEvent ? selectedEvent.title : 'University of Abra Arena Championship'}

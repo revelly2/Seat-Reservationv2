@@ -14,40 +14,104 @@ export const AdminScanner: React.FC = () => {
   const [isGateConnected, setIsGateConnected] = useState(false);
   const [gateStatus, setGateStatus] = useState<'DISCONNECTED' | 'LOCKED' | 'OPENING' | 'OPEN'>('DISCONNECTED');
 
+  const startSerialReader = async (port: any) => {
+    try {
+      const textDecoder = new TextDecoderStream();
+      port.readable.pipeTo(textDecoder.writable).catch(() => {});
+      const reader = textDecoder.readable.getReader();
+      let buffer = '';
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) {
+          reader.releaseLock();
+          break;
+        }
+        if (value) {
+          buffer += value;
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+          for (const raw of lines) {
+            const line = raw.trim();
+            if (line === 'STATUS:GATE_OPEN') {
+              setGateStatus('OPEN');
+            } else if (line === 'STATUS:GATE_LOCKED') {
+              setGateStatus('LOCKED');
+            } else if (line.includes('ESP32_BARRIER_GATE_READY')) {
+              setIsGateConnected(true);
+              setGateStatus('LOCKED');
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Web Serial reader stream ended:', err);
+    }
+  };
+
   const handleConnectESP32 = async () => {
+    if (isGateConnected && serialPort) {
+      try {
+        await serialPort.close();
+      } catch (e) {
+        console.warn('Error closing port:', e);
+      }
+      setSerialPort(null);
+      setIsGateConnected(false);
+      setGateStatus('DISCONNECTED');
+      return;
+    }
+
     if (typeof window === 'undefined' || !('serial' in navigator)) {
-      alert('Web Serial API is supported in Chrome/Edge browsers over HTTPS or localhost.');
+      alert('Web Serial API is supported in Chromium browsers (Chrome, Edge, Opera) over HTTPS or localhost.');
       // Enable simulation mode for UI testing
       setIsGateConnected(true);
       setGateStatus('LOCKED');
       return;
     }
+
     try {
       const port = await (navigator as any).serial.requestPort();
       await port.open({ baudRate: 115200 });
       setSerialPort(port);
       setIsGateConnected(true);
       setGateStatus('LOCKED');
+      startSerialReader(port);
     } catch (err: any) {
-      console.error('Serial port error:', err);
-      // Fallback to simulated mode
+      console.error('Serial port connection error:', err);
+      // Fallback to simulated mode if user cancelled or error
       setIsGateConnected(true);
       setGateStatus('LOCKED');
     }
   };
 
   const triggerBarrierGate = async (command: string = 'GATE:OPEN') => {
+    if (command === 'GATE:CLOSE') {
+      setGateStatus('LOCKED');
+      if (serialPort && serialPort.writable) {
+        try {
+          const encoder = new TextEncoder();
+          const writer = serialPort.writable.getWriter();
+          await writer.write(encoder.encode('GATE:CLOSE\n'));
+          writer.releaseLock();
+        } catch (err) {
+          console.error('ESP32 Serial write error:', err);
+        }
+      }
+      return;
+    }
+
     setGateStatus('OPENING');
 
     if (serialPort && serialPort.writable) {
       try {
-        const textEncoder = new TextEncoderStream();
-        const writableStreamClosed = textEncoder.readable.pipeTo(serialPort.writable);
-        const writer = textEncoder.writable.getWriter();
-        await writer.write(`${command}\n`);
+        const encoder = new TextEncoder();
+        const data = encoder.encode(`${command}\n`);
+        const writer = serialPort.writable.getWriter();
+        await writer.write(data);
         writer.releaseLock();
       } catch (err) {
-        console.error('Serial write error:', err);
+        console.error('ESP32 Serial write error:', err);
       }
     }
 
@@ -55,7 +119,7 @@ export const AdminScanner: React.FC = () => {
       setGateStatus('OPEN');
     }, 500);
 
-    // Auto-close barrier gate after 5 seconds
+    // Auto-close barrier gate after 5 seconds if not synced via hardware
     setTimeout(() => {
       setGateStatus('LOCKED');
     }, 5500);
@@ -157,6 +221,12 @@ export const AdminScanner: React.FC = () => {
             className="px-3 py-1.5 text-xs bg-[#161616] text-[#D7D5CF] hover:bg-[#E8590C] font-bold uppercase border border-[#161616]"
           >
             MANUAL OPEN GATE →
+          </button>
+          <button
+            onClick={() => triggerBarrierGate('GATE:CLOSE')}
+            className="px-3 py-1.5 text-xs bg-[#8B0000] text-[#FFFFFF] hover:bg-[#FF0000] font-bold uppercase border border-[#161616]"
+          >
+            STOP / LOCK GATE ✕
           </button>
         </div>
       </div>
