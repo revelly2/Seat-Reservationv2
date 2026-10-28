@@ -49,41 +49,7 @@ export async function POST(request: NextRequest) {
       expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
     };
 
-    // Check if user already has an active reservation for this specific event
-    const { data: existingRes } = await supabaseAdmin
-      .from('reservations')
-      .select('id, seat_ids, total_amount')
-      .eq('user_id', validUserId)
-      .eq('event_id', validEventId)
-      .in('status', ['CONFIRMED', 'PENDING'])
-      .maybeSingle();
-
-    if (existingRes) {
-      // Merge seat IDs and update reservation
-      const combinedSeats = Array.from(new Set([...(existingRes.seat_ids || []), ...validSeatIds]));
-      const newTotal = (existingRes.total_amount || 0) + (totalAmount || 150.0);
-      await supabaseAdmin
-        .from('reservations')
-        .update({
-          seat_ids: combinedSeats,
-          total_amount: newTotal,
-          payment_status: paymentStatus,
-        })
-        .eq('id', existingRes.id);
-
-      return NextResponse.json({
-        success: true,
-        reservation: {
-          ...newReservation,
-          id: existingRes.id,
-          seatIds: combinedSeats,
-          totalAmount: newTotal,
-        },
-        receiptUrl: `/api/v1/reservations/${existingRes.id}`,
-      });
-    }
-
-    // Insert live reservation into Supabase database for this specific event
+    // Each booking is its own ticket: seats paid for together share one reservation, later bookings get a new one.
     const { error: dbErr } = await supabaseAdmin.from('reservations').insert([
       {
         id: reservationId,
@@ -99,7 +65,10 @@ export async function POST(request: NextRequest) {
     ]);
 
     if (dbErr) {
-      console.warn('Supabase reservations insert note:', dbErr.message);
+      return NextResponse.json(
+        { error: `Reservation could not be saved: ${dbErr.message}` },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({

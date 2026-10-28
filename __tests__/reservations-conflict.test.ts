@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 
 // Fake Supabase client: the real lib/supabase-admin (incl. findTakenSeats) runs against these in-memory rows.
 let rows: any[] = [];
+let insertError: { message: string } | null = null;
 jest.mock('@supabase/supabase-js', () => ({
   createClient: () => ({
     from: () => {
@@ -11,7 +12,11 @@ jest.mock('@supabase/supabase-js', () => ({
         eq: (k: string, v: any) => { filters.push((r) => r[k] === v); return q; },
         in: (k: string, v: any[]) => { filters.push((r) => v.includes(r[k])); return q; },
         maybeSingle: async () => ({ data: rows.filter((r) => filters.every((f) => f(r)))[0] ?? null, error: null }),
-        insert: async (newRows: any[]) => { rows.push(...newRows); return { error: null }; },
+        insert: async (newRows: any[]) => {
+          if (insertError) return { error: insertError };
+          rows.push(...newRows);
+          return { error: null };
+        },
         then: (resolve: any) => resolve({ data: rows.filter((r) => filters.every((f) => f(r))), error: null }),
       };
       return q;
@@ -47,6 +52,23 @@ describe('booking without seat holds', () => {
     expect(res.status).toBe(200);
     expect(data.reservation.status).toBe('CONFIRMED');
     expect(rows).toHaveLength(2);
+  });
+
+  test('a second booking by the same user for the same event is a separate ticket', async () => {
+    const first = await (await post(createReservation, { seatIds: ['seat-VIP-C-11'], eventId: EVENT, userId: 'juan@test.local', totalAmount: 250 })).json();
+    const second = await (await post(createReservation, { seatIds: ['seat-VIP-C-12', 'seat-VIP-C-13'], eventId: EVENT, userId: 'juan@test.local', totalAmount: 500 })).json();
+    expect(second.reservation.id).not.toBe(first.reservation.id);
+    expect(second.reservation.seatIds).toEqual(['seat-VIP-C-12', 'seat-VIP-C-13']);
+    expect(second.reservation.totalAmount).toBe(500);
+    expect(rows).toHaveLength(3);
+  });
+
+  test('a failed save is reported, not shown as a successful booking', async () => {
+    insertError ={ message: 'duplicate key value violates unique constraint' };
+    const res = await post(createReservation, { seatIds: ['seat-VIP-C-14'], eventId: EVENT, userId: 'juan@test.local', totalAmount: 250 });
+    insertError = null;
+    expect(res.status).toBe(500);
+    expect((await res.json()).error).toContain('could not be saved');
   });
 
   test('payment is refused before charging when a seat is already reserved', async () => {
