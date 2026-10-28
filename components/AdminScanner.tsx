@@ -1,7 +1,34 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { RegistrationCrosses } from './RegistrationCrosses';
+
+// Minimal Web Serial typing; the DOM lib in this TypeScript version does not include it.
+interface WebSerialPort {
+  readable: ReadableStream<Uint8Array> | null;
+  writable: WritableStream<Uint8Array> | null;
+  open(options: { baudRate: number }): Promise<void>;
+  close(): Promise<void>;
+  setSignals(signals: { dataTerminalReady?: boolean; requestToSend?: boolean }): Promise<void>;
+}
+interface WebSerial {
+  requestPort(): Promise<WebSerialPort>;
+}
+
+type GateStatus = 'DISCONNECTED' | 'CONNECTING' | 'LOCKED' | 'OPENING' | 'OPEN';
+
+// No STATUS line within this time after a command means the board did not act on it.
+const BOARD_REPLY_TIMEOUT_MS = 2500;
+
+function describeSerialError(err: unknown): string {
+  const name = err instanceof DOMException ? err.name : '';
+  const msg = err instanceof Error ? err.message : String(err);
+  if (name === 'NotFoundError') return 'No port selected. If the ESP32 is not in the list, check the USB cable (must carry data) and the CP210x/CH340 driver.';
+  if (name === 'InvalidStateError') return 'The port is already open, maybe in another tab. Close other tabs using the gate and try again.';
+  if (name === 'NetworkError') return 'Could not open the port. Close the Arduino IDE Serial Monitor or any other program using it, then re-plug the ESP32.';
+  if (name === 'SecurityError') return 'The browser blocked serial access. Use Chrome or Edge on an https:// or localhost page.';
+  return `Serial error: ${msg}`;
+}
 
 export const AdminScanner: React.FC = () => {
   const [qrCodeInput, setQrCodeInput] = useState('');
@@ -9,120 +36,150 @@ export const AdminScanner: React.FC = () => {
   const [scanResult, setScanResult] = useState<any>(null);
   const [scanError, setScanError] = useState<string | null>(null);
 
-  // ESP32 Web Serial Gate Control state
-  const [serialPort, setSerialPort] = useState<any>(null);
-  const [isGateConnected, setIsGateConnected] = useState(false);
-  const [gateStatus, setGateStatus] = useState<'DISCONNECTED' | 'LOCKED' | 'OPENING' | 'OPEN'>('DISCONNECTED');
+  // ESP32 Web Serial gate control. The gate state shown is only what the board reports.
+  const [serialPort, setSerialPort] = useState<WebSerialPort | null>(null);
+  const [gateStatus, setGateStatus] = useState<GateStatus>('DISCONNECTED');
+  const [gateError, setGateError] = useState<string | null>(null);
+  const readerRef = useRef<ReadableStreamDefaultReader<string> | null>(null);
+  const pipeRef = useRef<Promise<void> | null>(null);
+  const replyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isGateConnected = serialPort !== null;
 
-  const startSerialReader = async (port: any) => {
+  const clearReplyTimer = () => {
+    if (replyTimerRef.current) clearTimeout(replyTimerRef.current);
+    replyTimerRef.current = null;
+  };
+
+  const expectBoardReply = (what: string) => {
+    clearReplyTimer();
+    replyTimerRef.current = setTimeout(() => {
+      setGateError(`No reply from the ESP32 to ${what}. Check that the gate firmware is flashed at 115200 baud, then reconnect.`);
+      setGateStatus((s) => (s === 'OPENING' || s === 'CONNECTING' ? 'DISCONNECTED' : s));
+    }, BOARD_REPLY_TIMEOUT_MS);
+  };
+
+  const handleBoardLine = (line: string) => {
+    if (line === 'STATUS:GATE_OPEN') {
+      clearReplyTimer();
+      setGateError(null);
+      setGateStatus('OPEN');
+    } else if (line === 'STATUS:GATE_LOCKED' || line.includes('ESP32_BARRIER_GATE_READY')) {
+      clearReplyTimer();
+      setGateError(null);
+      setGateStatus('LOCKED');
+    }
+  };
+
+  const startSerialReader = async (port: WebSerialPort) => {
+    if (!port.readable) return;
+    const textDecoder = new TextDecoderStream();
+    pipeRef.current = port.readable.pipeTo(textDecoder.writable as WritableStream<Uint8Array>).catch(() => {});
+    const reader = textDecoder.readable.getReader();
+    readerRef.current = reader;
+    let buffer = '';
     try {
-      const textDecoder = new TextDecoderStream();
-      port.readable.pipeTo(textDecoder.writable).catch(() => {});
-      const reader = textDecoder.readable.getReader();
-      let buffer = '';
-
       while (true) {
         const { value, done } = await reader.read();
-        if (done) {
-          reader.releaseLock();
-          break;
-        }
-        if (value) {
-          buffer += value;
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
-          for (const raw of lines) {
-            const line = raw.trim();
-            if (line === 'STATUS:GATE_OPEN') {
-              setGateStatus('OPEN');
-            } else if (line === 'STATUS:GATE_LOCKED') {
-              setGateStatus('LOCKED');
-            } else if (line.includes('ESP32_BARRIER_GATE_READY')) {
-              setIsGateConnected(true);
-              setGateStatus('LOCKED');
-            }
-          }
-        }
+        if (done) break;
+        buffer += value;
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        lines.forEach((raw) => handleBoardLine(raw.trim()));
       }
     } catch (err) {
-      console.warn('Web Serial reader stream ended:', err);
+      // Stream errors here mean the board was unplugged or reset the USB link.
+      setGateError(`ESP32 connection lost: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      reader.releaseLock();
+      if (readerRef.current === reader) {
+        readerRef.current = null;
+        clearReplyTimer();
+        setSerialPort(null);
+        setGateStatus('DISCONNECTED');
+      }
     }
+  };
+
+  const disconnectESP32 = async (port: WebSerialPort) => {
+    const reader = readerRef.current;
+    readerRef.current = null;
+    clearReplyTimer();
+    try {
+      await reader?.cancel();
+      await pipeRef.current;
+      await port.close();
+    } catch (e) {
+      console.warn('Error closing port:', e);
+    }
+    setSerialPort(null);
+    setGateStatus('DISCONNECTED');
   };
 
   const handleConnectESP32 = async () => {
-    if (isGateConnected && serialPort) {
-      try {
-        await serialPort.close();
-      } catch (e) {
-        console.warn('Error closing port:', e);
-      }
-      setSerialPort(null);
-      setIsGateConnected(false);
-      setGateStatus('DISCONNECTED');
+    setGateError(null);
+    if (serialPort) {
+      await disconnectESP32(serialPort);
       return;
     }
 
-    if (typeof window === 'undefined' || !('serial' in navigator)) {
-      alert('Web Serial API is supported in Chromium browsers (Chrome, Edge, Opera) over HTTPS or localhost.');
-      // Enable simulation mode for UI testing
-      setIsGateConnected(true);
-      setGateStatus('LOCKED');
+    const serial = (navigator as Navigator & { serial?: WebSerial }).serial;
+    if (!serial) {
+      setGateError('This browser has no Web Serial support. Open the admin page in Chrome or Edge on a computer.');
       return;
     }
 
+    let port: WebSerialPort;
     try {
-      const port = await (navigator as any).serial.requestPort();
+      port = await serial.requestPort();
       await port.open({ baudRate: 115200 });
-      setSerialPort(port);
-      setIsGateConnected(true);
-      setGateStatus('LOCKED');
-      startSerialReader(port);
-    } catch (err: any) {
-      console.error('Serial port connection error:', err);
-      // Fallback to simulated mode if user cancelled or error
-      setIsGateConnected(true);
-      setGateStatus('LOCKED');
+    } catch (err) {
+      setGateError(describeSerialError(err));
+      return;
+    }
+
+    // Opening can leave DTR/RTS asserted, which holds some ESP32 boards in reset; release both so the sketch runs.
+    try {
+      await port.setSignals({ dataTerminalReady: false, requestToSend: false });
+    } catch (err) {
+      console.warn('Could not release DTR/RTS:', err);
+    }
+
+    setSerialPort(port);
+    setGateStatus('CONNECTING');
+    startSerialReader(port);
+    // The board prints READY after a reset; if it did not reset, ask for its state instead.
+    setTimeout(() => {
+      void writeToBoard(port, 'STATUS');
+    }, 1500);
+    expectBoardReply('the connection check');
+  };
+
+  const writeToBoard = async (port: WebSerialPort, command: string): Promise<boolean> => {
+    if (!port.writable) {
+      setGateError('The ESP32 port is not writable. Disconnect and connect again.');
+      return false;
+    }
+    const writer = port.writable.getWriter();
+    try {
+      await writer.write(new TextEncoder().encode(`${command}\n`));
+      return true;
+    } catch (err) {
+      setGateError(`Could not send ${command} to the ESP32: ${err instanceof Error ? err.message : String(err)}`);
+      return false;
+    } finally {
+      writer.releaseLock();
     }
   };
 
-  const triggerBarrierGate = async (command: string = 'GATE:OPEN') => {
-    if (command === 'GATE:CLOSE') {
-      setGateStatus('LOCKED');
-      if (serialPort && serialPort.writable) {
-        try {
-          const encoder = new TextEncoder();
-          const writer = serialPort.writable.getWriter();
-          await writer.write(encoder.encode('GATE:CLOSE\n'));
-          writer.releaseLock();
-        } catch (err) {
-          console.error('ESP32 Serial write error:', err);
-        }
-      }
+  const triggerBarrierGate = async (command: 'GATE:OPEN' | 'GATE:CLOSE' = 'GATE:OPEN') => {
+    if (!serialPort) {
+      setGateError('ESP32 not connected. Click CONNECT ESP32 BARRIER first.');
       return;
     }
-
-    setGateStatus('OPENING');
-
-    if (serialPort && serialPort.writable) {
-      try {
-        const encoder = new TextEncoder();
-        const data = encoder.encode(`${command}\n`);
-        const writer = serialPort.writable.getWriter();
-        await writer.write(data);
-        writer.releaseLock();
-      } catch (err) {
-        console.error('ESP32 Serial write error:', err);
-      }
-    }
-
-    setTimeout(() => {
-      setGateStatus('OPEN');
-    }, 500);
-
-    // Auto-close barrier gate after 5 seconds if not synced via hardware
-    setTimeout(() => {
-      setGateStatus('LOCKED');
-    }, 5500);
+    setGateError(null);
+    if (!(await writeToBoard(serialPort, command))) return;
+    if (command === 'GATE:OPEN') setGateStatus('OPENING');
+    expectBoardReply(command);
   };
 
   const handleScanSubmit = async (e: React.FormEvent) => {
@@ -185,7 +242,11 @@ export const AdminScanner: React.FC = () => {
                 : 'bg-[#E8590C] text-[#FFFFFF] hover:bg-[#161616]'
             }`}
           >
-            {isGateConnected ? '⚡ ESP32 GATE: CONNECTED' : '🔌 CONNECT ESP32 BARRIER'}
+            {gateStatus === 'CONNECTING'
+              ? '⏳ WAITING FOR ESP32…'
+              : isGateConnected
+              ? '⚡ ESP32 GATE: CONNECTED (CLICK TO DISCONNECT)'
+              : '🔌 CONNECT ESP32 BARRIER'}
           </button>
           <div className="bg-[#161616] text-[#E8590C] px-3 py-1.5 text-xs font-bold uppercase border-2 border-[#161616]">
             LOCATION: ABRA ARENA MAIN ENTRANCE
@@ -213,6 +274,11 @@ export const AdminScanner: React.FC = () => {
               [{gateStatus}]
             </span>
           </div>
+          {gateError && (
+            <div role="alert" className="mt-2 p-2 bg-[#8B0000] text-[#FFFFFF] text-xs font-bold border border-[#161616]">
+              ESP32: {gateError}
+            </div>
+          )}
         </div>
 
         <div className="flex gap-2">
@@ -307,10 +373,10 @@ export const AdminScanner: React.FC = () => {
             <div className="space-y-4 font-mono-spec">
               <div className="p-4 bg-[#161616] text-[#E8590C] border-2 border-[#161616]">
                 <div className="text-[10px] tracking-widest uppercase font-bold text-[#D7D5CF]">
-                  STATUS: VERIFIED & BARRIER OPENED
+                  STATUS: TICKET VERIFIED & CHECKED IN
                 </div>
                 <div className="font-anton text-xl tracking-wider text-[#FFFFFF] mt-1">
-                  ENTRY GRANTED // ESP32 GATE PULSED
+                  {isGateConnected ? 'ENTRY GRANTED // OPEN COMMAND SENT TO ESP32' : 'ENTRY GRANTED // ESP32 NOT CONNECTED'}
                 </div>
               </div>
 
@@ -347,7 +413,7 @@ export const AdminScanner: React.FC = () => {
 
               <div className="p-3 bg-[#161616] text-[#D7D5CF] border-2 border-[#161616] text-[11px] font-bold flex justify-between items-center">
                 <span className="text-[#2ECC40]">✓ PRE-PAID VIA STRIPE ONLINE</span>
-                <span className="text-[#E8590C]">BARRIER: OPEN</span>
+                <span className="text-[#E8590C]">BARRIER: {gateStatus}</span>
               </div>
             </div>
           ) : (
